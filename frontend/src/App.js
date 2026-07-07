@@ -1,56 +1,61 @@
-import { useEffect } from "react";
 import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
-import { HOME } from "@/constants/testIds";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AuthProvider, useAuth } from "@/lib/auth";
+import Login from "@/pages/Login";
+import Layout from "@/components/Layout";
+import Dashboard from "@/pages/Dashboard";
+import Operadoras from "@/pages/Operadoras";
+import IPBXs from "@/pages/IPBXs";
+import Rotas from "@/pages/Rotas";
+import ACL from "@/pages/ACL";
+import CDR from "@/pages/CDR";
+import LiveChannels from "@/pages/LiveChannels";
+import AntiFraude from "@/pages/AntiFraude";
+import FreeSwitch from "@/pages/FreeSwitch";
+import Users from "@/pages/Users";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+function Protected() {
+  const { user } = useAuth();
+  if (user === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-xs font-mono text-[color:var(--text-muted)]"
+        data-testid="app-loading">
+        Verificando sessão…
+      </div>
+    );
+  }
+  if (!user) return <Navigate to="/login" replace />;
+  return <Layout />;
+}
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
+function LoginRoute() {
+  const { user } = useAuth();
+  if (user) return <Navigate to="/" replace />;
+  return <Login />;
+}
 
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
-
-  return (
-    <div>
-      <header className="App-header">
-        <a
-          data-testid={HOME.emergentLink}
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
-  );
-};
-
-function App() {
+export default function App() {
   return (
     <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<LoginRoute />} />
+            <Route path="/" element={<Protected />}>
+              <Route index element={<Dashboard />} />
+              <Route path="operadoras" element={<Operadoras />} />
+              <Route path="ipbxs" element={<IPBXs />} />
+              <Route path="rotas" element={<Rotas />} />
+              <Route path="acl" element={<ACL />} />
+              <Route path="cdr" element={<CDR />} />
+              <Route path="live" element={<LiveChannels />} />
+              <Route path="antifraud" element={<AntiFraude />} />
+              <Route path="freeswitch" element={<FreeSwitch />} />
+              <Route path="usuarios" element={<Users />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
     </div>
   );
 }
-
-export default App;
