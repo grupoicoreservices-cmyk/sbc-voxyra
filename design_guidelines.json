@@ -1,0 +1,91 @@
+{
+  "project_name": "SBC Manager",
+  "language": "pt-BR",
+  "theme": "dark",
+  "archetype": "4 (Swiss & High-Contrast / NOC Technical)",
+  "design_philosophy": "Information-dense, professional NOC (Network Operations Center) telecom dashboard. Strictly functional, utilizing high contrast to highlight system states, real-time metrics, and security controls. No decorative gradients; focus on clarity, precision, and low eye strain.",
+  "color_system": {
+    "background": {
+      "base": "#0A0A0A",
+      "surface": "#121212",
+      "elevated": "#1A1D24"
+    },
+    "text": {
+      "primary": "#F8FAFC",
+      "secondary": "#94A3B8",
+      "muted": "#64748B",
+      "code": "#00FF66"
+    },
+    "border": {
+      "default": "#27272A",
+      "focus": "#3B82F6",
+      "active": "#00FF66"
+    },
+    "status": {
+      "success": "#22C55E",
+      "success_bg": "rgba(34, 197, 94, 0.1)",
+      "warning": "#F59E0B",
+      "warning_bg": "rgba(245, 158, 11, 0.1)",
+      "danger": "#EF4444",
+      "danger_bg": "rgba(239, 68, 68, 0.1)",
+      "info": "#3B82F6"
+    },
+    "brand_primary": "#3B82F6"
+  },
+  "typography": {
+    "font_families": {
+      "ui": "IBM Plex Sans, sans-serif",
+      "data": "JetBrains Mono, monospace"
+    },
+    "hierarchy": {
+      "h1": "text-2xl font-semibold tracking-tight text-slate-100",
+      "h2": "text-lg font-medium tracking-tight text-slate-200",
+      "body": "text-sm text-slate-300",
+      "data_dense": "font-mono text-xs text-slate-300",
+      "labels": "text-xs font-semibold uppercase tracking-wider text-slate-500"
+    },
+    "rules": [
+      "Use IBM Plex Sans for all navigational and standard UI text.",
+      "CRITICAL: Use JetBrains Mono for ALL IPs, CIDRs, phone numbers, ports, session IDs, and FreeSWITCH XML code.",
+      "Never center-align table data. Always strictly left-aligned.",
+      "Keep line-heights tight (leading-snug or leading-none) to maximize vertical space."
+    ]
+  },
+  "layout_and_spacing": {
+    "system": "Control Room Grid",
+    "structure": {
+      "sidebar": "w-64 expanded, w-16 collapsed. Contains main navigation (pt-BR).",
+      "topbar": "h-12 border-b border-border/40. Contains global server status (Uptime, CPU, RAM) and User Menu.",
+      "content_area": "p-4 or p-6. Very minimal padding to maximize data visibility."
+    },
+    "tables": "Dense. Use py-2 px-3 for cells. Cardless design (border-collapse, border-y only, no outer wrapper shadows). Hover state: bg-white/5.",
+    "widgets": "Flat background, 1px solid border (border-white/10), no shadow. Sharp corners (rounded-none or max rounded-sm)."
+  },
+  "components": {
+    "status_leds": "Use w-2 h-2 rounded-full inline-block. Add 'animate-pulse' only for 'Active' or 'Ringing' live channels.",
+    "buttons": "Utilitarian. Flat colors, 1px border. h-8 px-3 text-xs for table actions.",
+    "inputs": "bg-transparent border-white/10 text-sm focus:ring-1 focus:ring-blue-500 focus:border-transparent.",
+    "toasts": "Bottom-right placement. Used for real-time ACL blocks, route failures, or critical system events.",
+    "charts": "Recharts. Dark theme. Minimal grid lines (stroke-white/5). Use solid lines (stroke-width 2) with Area gradients (opacity 0.1)."
+  },
+  "assets": {
+    "icons": "lucide-react. Size 16px for inline, 20px for sidebar.",
+    "image_urls": [
+      {
+        "category": "login_background",
+        "url": "https://images.unsplash.com/photo-1691435828932-911a7801adfb?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMjd8MHwxfHNlYXJjaHwxfHxkYXJrJTIwc2VydmVyJTIwcm9vbSUyMGZpYmVyJTIwb3B0aWN8ZW58MHx8fHwxNzgzNDY3MjQ0fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Dark server room with fiber optic cables. Apply heavy black overlay (bg-black/80) to ensure login form legibility."
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "1. Setup the routing and JWT auth wrapper first. The default view post-login is the Dashboard.",
+    "2. Implement the layout with a collapsible sidebar and a top status bar.",
+    "3. Sidebar sections must be EXACTLY: Dashboard, Operadoras, IPBX externos, Rotas/LCR, ACL, CDR, Chamadas Ativas, Anti-Fraude, Configurações FreeSWITCH, Usuários.",
+    "4. All data tables (Chamadas Ativas, Operadoras, CDR, ACL) must use a dense, cardless design. Apply 'font-mono' to IP and numeric columns.",
+    "5. Chamadas Ativas (Live Channels) should simulate real-time data streaming (use useEffect intervals to update durations and statuses). Include a pulse effect on 'Ringing' states.",
+    "6. Configurações FreeSWITCH page should display a generated XML payload inside a <pre> block with syntax highlighting colors (e.g., #00FF66 for tags), and a Download button.",
+    "7. Every interactive element (buttons, links, inputs, rows) MUST have a 'data-testid' attribute (e.g., data-testid='sidebar-link-acl', data-testid='btn-add-operadora').",
+    "8. Ensure the entire UI is strictly dark themed and uses the specified colors. NO purple, NO teal. Rely on Graphite, Green, Amber, Red, and Blue (for generic actions)."
+  ]
+}
