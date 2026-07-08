@@ -37,6 +37,8 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
 
+from esl import ESLClient
+
 
 # ---------------------------------------------------------------------------
 # Setup
@@ -50,6 +52,24 @@ JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALGO = "HS256"
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@sbcmanager.com")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "Admin@2026")
+
+FS_ESL_ENABLED = os.environ.get("FS_ESL_ENABLED", "false").lower() in ("1", "true", "yes")
+FS_ESL_HOST = os.environ.get("FS_ESL_HOST", "127.0.0.1")
+FS_ESL_PORT = int(os.environ.get("FS_ESL_PORT", "8021"))
+FS_ESL_PASSWORD = os.environ.get("FS_ESL_PASSWORD", "ClueCon")
+
+# Runtime state
+esl_client: ESLClient | None = None
+fs_state = {
+    "esl_enabled": FS_ESL_ENABLED,
+    "esl_connected": False,
+    "uptime": None,
+    "version": None,
+    "channels_count": 0,
+    "last_error": None,
+    "source": "simulator" if not FS_ESL_ENABLED else "esl",
+    "last_sync": None,
+}
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -294,12 +314,23 @@ async def lifespan(app: FastAPI):
     if await db.operadoras.count_documents({}) == 0:
         await _seed_sample_data()
 
-    # start background simulator
-    task = asyncio.create_task(_call_simulator())
+    # start background workers
+    global esl_client
+    tasks = []
+    if FS_ESL_ENABLED:
+        esl_client = ESLClient(FS_ESL_HOST, FS_ESL_PORT, FS_ESL_PASSWORD)
+        tasks.append(asyncio.create_task(_esl_sync_loop()))
+        logger.info("FreeSWITCH ESL integration ENABLED (%s:%s)", FS_ESL_HOST, FS_ESL_PORT)
+    else:
+        tasks.append(asyncio.create_task(_call_simulator()))
+        logger.info("FreeSWITCH ESL disabled - running simulator")
     try:
         yield
     finally:
-        task.cancel()
+        for t in tasks:
+            t.cancel()
+        if esl_client:
+            await esl_client.close()
         client.close()
 
 
@@ -489,8 +520,16 @@ async def kill_channel(cid: str, _: dict = Depends(get_current_user)):
     doc = await db.live_channels.find_one({"id": cid}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Canal não encontrado")
+
+    # If ESL is enabled, kill the channel in FreeSWITCH by uuid.
+    # Actual CDR will be written by mod_json_cdr webhook.
+    if FS_ESL_ENABLED and esl_client:
+        await esl_client.api(f"uuid_kill {doc.get('call_id') or cid}")
+        await db.live_channels.delete_one({"id": cid})
+        return {"ok": True, "source": "esl"}
+
+    # Simulator path: delete + write CDR manually
     await db.live_channels.delete_one({"id": cid})
-    # write CDR
     started = datetime.fromisoformat(doc["started_at"])
     ended = datetime.now(timezone.utc)
     dur = int((ended - started).total_seconds())
@@ -502,7 +541,7 @@ async def kill_channel(cid: str, _: dict = Depends(get_current_user)):
         "hangup_cause": "MANAGER_REQUEST",
         "disposition": "ANSWERED", "direction": doc.get("direction", "inbound"),
     })
-    return {"ok": True}
+    return {"ok": True, "source": "simulator"}
 
 
 # ---------------------------------------------------------------------------
@@ -705,6 +744,190 @@ echo "CLI: fs_cli"
 echo "Logs: journalctl -u freeswitch -f"
 echo "===================================================="
 """
+
+
+# ---------------------------------------------------------------------------
+# FreeSWITCH real integration: status, CDR webhook, ESL sync
+# ---------------------------------------------------------------------------
+@api.get("/freeswitch/status")
+async def freeswitch_status(_: dict = Depends(get_current_user)):
+    return fs_state
+
+
+@api.post("/freeswitch/reload")
+async def freeswitch_reload(_: dict = Depends(get_current_user)):
+    """Send reloadxml + reloadacl to FreeSWITCH via ESL."""
+    if not FS_ESL_ENABLED or not esl_client:
+        raise HTTPException(status_code=400, detail="ESL não habilitado")
+    await esl_client.api("reloadxml")
+    await esl_client.api("reloadacl")
+    return {"ok": True}
+
+
+@api.post("/cdr/webhook")
+async def cdr_webhook(request: Request):
+    """Receive CDR from mod_json_cdr (mounted on nginx as localhost-only).
+
+    mod_json_cdr POSTs a large JSON with `variables`, `callflow`, etc.
+    We extract the important fields and store them in db.cdr.
+    """
+    # Localhost-only guard (nginx should already restrict, but double-check)
+    client_ip = request.client.host if request.client else ""
+    if client_ip not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(status_code=403, detail="webhook restrito ao localhost")
+
+    try:
+        body = await request.json()
+    except Exception:
+        # some mod_xml_cdr configs use form encoding
+        raw = await request.body()
+        try:
+            import json as _json
+            body = _json.loads(raw.decode("utf-8", errors="replace"))
+        except Exception:
+            raise HTTPException(status_code=400, detail="payload inválido")
+
+    v = (body.get("variables") or {})
+    _ = (body.get("callflow") or [{}])
+
+    def _to_iso(us: str | None) -> str | None:
+        if not us:
+            return None
+        try:
+            # FreeSWITCH times are microseconds since epoch
+            s = int(us) / 1_000_000
+            return datetime.fromtimestamp(s, tz=timezone.utc).isoformat()
+        except Exception:
+            return None
+
+    disposition_map = {
+        "NORMAL_CLEARING": "ANSWERED",
+        "NO_ANSWER": "NO ANSWER",
+        "USER_BUSY": "BUSY",
+        "CALL_REJECTED": "FAILED",
+        "SUBSCRIBER_ABSENT": "NO ANSWER",
+        "ORIGINATOR_CANCEL": "NO ANSWER",
+        "NORMAL_TEMPORARY_FAILURE": "FAILED",
+        "SWITCH_CONGESTION": "CONGESTION",
+    }
+    hangup = v.get("hangup_cause", "NORMAL_CLEARING")
+    billsec = int(v.get("billsec", 0) or 0)
+    disposition = "ANSWERED" if billsec > 0 and hangup == "NORMAL_CLEARING" else disposition_map.get(hangup, "FAILED")
+
+    direction = v.get("direction") or v.get("call_direction") or "inbound"
+    if direction not in ("inbound", "outbound"):
+        direction = "inbound"
+
+    doc = {
+        "id": _uuid(),
+        "call_id": v.get("uuid") or v.get("call_uuid") or _uuid(),
+        "src": v.get("caller_id_number", "") or v.get("ani", ""),
+        "dst": v.get("destination_number", ""),
+        "src_ip": v.get("sip_network_ip") or v.get("network_addr"),
+        "started_at": _to_iso(v.get("start_stamp") or v.get("start_epoch") and str(int(v["start_epoch"]) * 1_000_000)) or _now_iso(),
+        "answered_at": _to_iso(v.get("answer_stamp") or v.get("answered_time")),
+        "ended_at": _to_iso(v.get("end_stamp")) or _now_iso(),
+        "duration": int(v.get("duration", 0) or 0),
+        "billsec": billsec,
+        "hangup_cause": hangup,
+        "codec": v.get("read_codec", "PCMA"),
+        "disposition": disposition,
+        "direction": direction,
+        "operadora_id": None,
+        "ipbx_id": None,
+    }
+    await db.cdr.insert_one(doc)
+    logger.info("CDR received via webhook: %s %s->%s (%s, %ds)",
+                doc["call_id"][:8], doc["src"], doc["dst"], disposition, billsec)
+    doc.pop("_id", None)
+    return {"ok": True, "id": doc["id"]}
+
+
+async def _esl_sync_loop() -> None:
+    """Continuously sync live channels + status from FreeSWITCH via ESL."""
+    import json as _json
+    logger.info("ESL sync loop started")
+    while True:
+        try:
+            if not esl_client:
+                await asyncio.sleep(3)
+                continue
+            if not esl_client.connected:
+                ok = await esl_client.connect()
+                if not ok:
+                    fs_state["esl_connected"] = False
+                    fs_state["last_error"] = "Falha ao conectar no ESL"
+                    await asyncio.sleep(5)
+                    continue
+
+            # Status
+            status_out = await esl_client.api("status")
+            if status_out:
+                fs_state["esl_connected"] = True
+                fs_state["last_error"] = None
+                for line in status_out.splitlines():
+                    line = line.strip()
+                    if line.startswith("UP "):
+                        fs_state["uptime"] = line.replace("UP", "").strip()
+                    elif line.startswith("FreeSWITCH "):
+                        fs_state["version"] = line
+
+            # Channels
+            channels_out = await esl_client.api("show channels as json")
+            rows = []
+            if channels_out:
+                try:
+                    data = _json.loads(channels_out)
+                    rows = data.get("rows") or []
+                except Exception:
+                    rows = []
+            fs_state["channels_count"] = len(rows)
+            fs_state["last_sync"] = _now_iso()
+
+            # Upsert into db.live_channels using FS uuid as `id`
+            fs_uuids = set()
+            for r in rows:
+                uuid_ = r.get("uuid")
+                if not uuid_:
+                    continue
+                fs_uuids.add(uuid_)
+                # Map FS state to our status
+                fs_state_name = (r.get("callstate") or r.get("state") or "").upper()
+                status = "Active" if fs_state_name in ("ACTIVE", "CS_EXECUTE", "ANSWERED") \
+                    else "Hold" if fs_state_name == "HELD" \
+                    else "Ringing"
+                doc = {
+                    "id": uuid_,
+                    "call_id": uuid_,
+                    "src": r.get("cid_num") or "",
+                    "dst": r.get("dest") or "",
+                    "src_ip": r.get("ip_addr") or "",
+                    "codec": r.get("read_codec") or "PCMA",
+                    "operadora": r.get("presence_id") or "",
+                    "ipbx": "",
+                    "status": status,
+                    "direction": (r.get("direction") or "inbound").lower(),
+                    "started_at": r.get("created") or _now_iso(),
+                }
+                await db.live_channels.update_one({"id": uuid_}, {"$set": doc}, upsert=True)
+
+            # Remove channels no longer active
+            if fs_uuids:
+                await db.live_channels.delete_many({"id": {"$nin": list(fs_uuids)}})
+            else:
+                await db.live_channels.delete_many({})
+
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.exception("ESL sync error: %s", e)
+            fs_state["esl_connected"] = False
+            fs_state["last_error"] = str(e)
+            if esl_client:
+                await esl_client.close()
+            await asyncio.sleep(3)
+        await asyncio.sleep(2)
+
 
 
 # ---------------------------------------------------------------------------

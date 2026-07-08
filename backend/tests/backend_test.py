@@ -188,3 +188,111 @@ class TestLogout:
         sess.post(f"{BASE_URL}/api/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
         r = sess.post(f"{BASE_URL}/api/auth/logout")
         assert r.status_code == 200
+
+
+
+# ---------------- FreeSWITCH iteration 2: status, reload, CDR webhook ----------------
+LOCAL_BASE = "http://localhost:8001"
+
+
+class TestFsStatus:
+    def test_status_shape(self, s, auth):
+        r = s.get(f"{BASE_URL}/api/freeswitch/status")
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert d["esl_enabled"] is False
+        assert d["source"] == "simulator"
+        assert d["esl_connected"] is False
+        assert d["channels_count"] == 0
+        for k in ["uptime", "version", "last_error", "last_sync"]:
+            assert k in d
+
+    def test_reload_disabled(self, s, auth):
+        r = s.post(f"{BASE_URL}/api/freeswitch/reload")
+        assert r.status_code == 400
+        assert "ESL" in r.json().get("detail", "")
+
+    def test_status_requires_auth(self):
+        r = requests.get(f"{BASE_URL}/api/freeswitch/status")
+        assert r.status_code == 401
+
+
+class TestCdrWebhook:
+    def test_webhook_answered(self, s, auth):
+        payload = {"variables": {
+            "uuid": "wh-test-answered-1", "caller_id_number": "+5511999990001",
+            "destination_number": "+552133330001", "billsec": "30", "duration": "35",
+            "hangup_cause": "NORMAL_CLEARING", "read_codec": "PCMA",
+            "direction": "inbound", "start_epoch": "1750000000",
+        }}
+        r = requests.post(f"{LOCAL_BASE}/api/cdr/webhook", json=payload)
+        assert r.status_code == 200, r.text
+        j = r.json()
+        assert j["ok"] is True and j["id"]
+        # verify persisted via API (authenticated) - use high limit since start_epoch is old
+        r2 = s.get(f"{BASE_URL}/api/cdr?limit=2000")
+        rows = r2.json()
+        found = [x for x in rows if x.get("call_id") == "wh-test-answered-1"]
+        assert found, "CDR not persisted"
+        assert found[0]["disposition"] == "ANSWERED"
+        assert found[0]["billsec"] == 30
+        assert found[0]["codec"] == "PCMA"
+
+    def test_webhook_no_answer(self):
+        payload = {"variables": {
+            "uuid": "wh-test-noans-1", "caller_id_number": "+5511",
+            "destination_number": "+5521", "billsec": "0", "duration": "10",
+            "hangup_cause": "NO_ANSWER",
+        }}
+        r = requests.post(f"{LOCAL_BASE}/api/cdr/webhook", json=payload)
+        assert r.status_code == 200
+        assert r.json()["ok"] is True
+
+    def test_webhook_busy(self, s, auth):
+        payload = {"variables": {
+            "uuid": "wh-test-busy-1", "caller_id_number": "+5511",
+            "destination_number": "+5521", "billsec": "0",
+            "hangup_cause": "USER_BUSY",
+        }}
+        r = requests.post(f"{LOCAL_BASE}/api/cdr/webhook", json=payload)
+        assert r.status_code == 200
+        # verify disposition
+        rows = s.get(f"{BASE_URL}/api/cdr").json()
+        found = [x for x in rows if x.get("call_id") == "wh-test-busy-1"]
+        assert found and found[0]["disposition"] == "BUSY"
+
+    def test_webhook_no_answer_disposition(self, s, auth):
+        rows = s.get(f"{BASE_URL}/api/cdr").json()
+        found = [x for x in rows if x.get("call_id") == "wh-test-noans-1"]
+        assert found and found[0]["disposition"] == "NO ANSWER"
+
+    def test_webhook_blocks_external(self):
+        # Public URL hits webhook through ingress -> non-localhost -> 403
+        payload = {"variables": {"uuid": "wh-ext", "hangup_cause": "NORMAL_CLEARING"}}
+        r = requests.post(f"{BASE_URL}/api/cdr/webhook", json=payload)
+        assert r.status_code == 403
+        assert "localhost" in r.json().get("detail", "").lower()
+
+    def test_webhook_invalid_json(self):
+        r = requests.post(f"{LOCAL_BASE}/api/cdr/webhook",
+                          data="not json{", headers={"Content-Type": "application/json"})
+        assert r.status_code == 400
+
+
+class TestLiveChannelsSourceSimulator:
+    def test_delete_returns_simulator(self, s, auth):
+        # ensure at least one live channel exists (simulator populates them)
+        import time
+        rows = []
+        for _ in range(10):
+            rows = s.get(f"{BASE_URL}/api/live-channels").json()
+            if rows:
+                break
+            time.sleep(1)
+        if not rows:
+            pytest.skip("no live channels available from simulator")
+        cid = rows[0]["id"]
+        r = s.delete(f"{BASE_URL}/api/live-channels/{cid}")
+        assert r.status_code == 200
+        body = r.json()
+        assert body.get("source") == "simulator"

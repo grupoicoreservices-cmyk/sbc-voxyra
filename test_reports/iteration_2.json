@@ -1,0 +1,26 @@
+{
+  "summary": "Iteration 2 testing of SBC Manager: FreeSWITCH ESL + CDR webhook integration in disabled/simulator mode. Backend: 32/32 pytest cases passed (added 10 new tests for /freeswitch/status, /freeswitch/reload, /cdr/webhook (localhost + external block + invalid json + disposition mapping ANSWERED/NO ANSWER/BUSY), DELETE /live-channels source=simulator). Frontend: fs-status-card on Dashboard shows 'Modo simulador (ESL desativado)' + Fonte=Simulator; FreeSWITCH page fs-status-strip shows SIMULADOR and fs-reload-btn hidden; LiveChannels page live-source-tag = SIMULATOR. All 10 sidebar sections load with zero console/error nodes.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py CDR webhook: `start_epoch` handling uses short-circuit `v.get('start_stamp') or v.get('start_epoch') and str(...)` - correct behavior but readability suffers. Consider splitting to two branches.",
+    "server.py is now 1118 lines - close to 700-line threshold suggested. Consider splitting into routers/freeswitch.py, routers/cdr.py, routers/auth.py.",
+    "webhook localhost guard checks request.client.host but relies on nginx to restrict externally. In-cluster (k8s ingress) the proxy IP was correctly non-127.0.0.1 - verified 403 on public URL. If deployed behind additional proxies with X-Forwarded-For rewrite, this check remains safe (uses socket peer, not header).",
+    "fs_state is a module-level mutable dict shared across requests without lock - acceptable for single-worker uvicorn but flag for future gunicorn multi-worker deployment (use Redis or per-worker state).",
+    "esl_client is None-checked in reload but /freeswitch/status returns the raw fs_state without hiding esl-related fields (uptime/version = None). Frontend handles null OK."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (added TestFsStatus, TestCdrWebhook, TestLiveChannelsSourceSimulator - 10 new tests)"
+  ],
+  "success_rate": {"backend": "100% (32/32)", "frontend": "100%"},
+  "test_credentials": "admin@sbcmanager.com / Admin@2026 - verified working",
+  "seed_data_creation": "None new. Test creates CDRs via webhook with call_ids prefixed wh-test-* (persist in db.cdr).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Webhook /api/cdr/webhook is localhost-only guarded by request.client.host in ('127.0.0.1','::1','localhost'). To test successful POST, use http://localhost:8001 directly (bypasses ingress). Public URL correctly returns 403. In preview FS_ESL_ENABLED=false so /api/freeswitch/status returns esl_enabled=false, source=simulator, esl_connected=false, channels_count=0. /api/freeswitch/reload returns 400 with detail 'ESL não habilitado'. Simulator loop populates live_channels every 3-6s. Note: CDR list endpoint has default limit=200 and sorts by started_at desc - test CDRs with old start_epoch (e.g. 1750000000 = 2025) fall past default limit; use ?limit=2000 to fetch them for verification."
+}

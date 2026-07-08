@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar } from "recharts";
-import { PhoneCall, TrendingUp, Clock, ShieldCheck, ShieldAlert, Radio, Server, PhoneMissed } from "lucide-react";
+import { PhoneCall, TrendingUp, Clock, ShieldCheck, ShieldAlert, Radio, Server, PhoneMissed, Cpu, Wifi, WifiOff } from "lucide-react";
 
 function StatCard({ label, value, sub, icon: Icon, color = "text-[color:var(--text-primary)]", testid }) {
   return (
@@ -22,11 +22,18 @@ function StatCard({ label, value, sub, icon: Icon, color = "text-[color:var(--te
 
 export default function Dashboard() {
   const [m, setM] = useState(null);
+  const [fs, setFs] = useState(null);
 
   useEffect(() => {
     const load = async () => {
-      try { const { data } = await api.get("/metrics/dashboard"); setM(data); }
-      catch (_err) { /* ignore */ }
+      try {
+        const { data } = await api.get("/metrics/dashboard");
+        setM(data);
+      } catch (_err) { /* ignore */ }
+      try {
+        const { data } = await api.get("/freeswitch/status");
+        setFs(data);
+      } catch (_err) { /* ignore */ }
     };
     load();
     const iv = setInterval(load, 3500);
@@ -64,6 +71,51 @@ export default function Dashboard() {
           value={<span><span className="text-[color:var(--accent-green)]">{m.acl.allow}</span> / <span className="text-[color:var(--accent-red)]">{m.acl.deny}</span></span>}
           icon={ShieldAlert} sub="allow / deny rules" />
       </div>
+
+      {fs && (
+        <div className="sbc-card p-4" data-testid="fs-status-card">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 flex items-center justify-center border border-[color:var(--border-default)] rounded-md bg-[color:var(--bg-elevated)]">
+                <Cpu size={18} className="text-[color:var(--text-secondary)]" />
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-[color:var(--text-muted)]">FreeSWITCH Engine</div>
+                <div className="text-sm font-medium flex items-center gap-2">
+                  {fs.esl_enabled && fs.esl_connected ? (
+                    <><Wifi size={14} className="text-[color:var(--accent-green)]" /> Conectado via ESL</>
+                  ) : fs.esl_enabled ? (
+                    <><WifiOff size={14} className="text-[color:var(--accent-red)]" /> ESL habilitado, mas desconectado</>
+                  ) : (
+                    <><WifiOff size={14} className="text-[color:var(--text-muted)]" /> Modo simulador (ESL desativado)</>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-6 text-xs font-mono">
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-[color:var(--text-muted)]">Fonte</div>
+                <div className="font-semibold">{fs.source === "esl" ? "FreeSWITCH ESL" : "Simulator"}</div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-[color:var(--text-muted)]">Uptime FS</div>
+                <div className="font-semibold">{fs.uptime || "-"}</div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-[color:var(--text-muted)]">Canais no FS</div>
+                <div className="font-semibold text-[color:var(--accent-amber)]">{fs.channels_count}</div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-[color:var(--text-muted)]">Último sync</div>
+                <div className="font-semibold">{fs.last_sync ? new Date(fs.last_sync).toLocaleTimeString("pt-BR") : "-"}</div>
+              </div>
+            </div>
+          </div>
+          {fs.last_error && (
+            <div className="mt-3 text-xs text-[color:var(--accent-red)] font-mono">! {fs.last_error}</div>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="sbc-card p-4 lg:col-span-2">

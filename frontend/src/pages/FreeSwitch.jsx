@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
-import { Download, RefreshCw, Copy, Check, Terminal, FileCode2 } from "lucide-react";
+import { api, apiErrToStr } from "@/lib/api";
+import { Download, RefreshCw, Copy, Check, Terminal, FileCode2, Zap, AlertCircle } from "lucide-react";
 
 function highlight(xml) {
   // Escape first, then apply spans. Use placeholders to avoid re-matching spans.
@@ -31,6 +31,13 @@ export default function FreeSwitch() {
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [tab, setTab] = useState("xml");
+  const [status, setStatus] = useState(null);
+  const [reloadMsg, setReloadMsg] = useState(null);
+
+  const loadStatus = async () => {
+    try { const { data } = await api.get("/freeswitch/status"); setStatus(data); }
+    catch (_e) { /* ignore */ }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -39,9 +46,25 @@ export default function FreeSwitch() {
       api.get("/freeswitch/install-script", { responseType: "text" }),
     ]);
     setXml(x.data); setScript(s.data); setLoading(false);
+    loadStatus();
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    const iv = setInterval(loadStatus, 3000);
+    return () => clearInterval(iv);
+  }, []);
+
+  const reloadFs = async () => {
+    setReloadMsg(null);
+    try {
+      await api.post("/freeswitch/reload");
+      setReloadMsg({ ok: true, text: "reloadxml + reloadacl enviados com sucesso" });
+    } catch (e) {
+      setReloadMsg({ ok: false, text: apiErrToStr(e?.response?.data?.detail) || e.message });
+    }
+    setTimeout(() => setReloadMsg(null), 4000);
+  };
 
   const download = (content, name) => {
     const blob = new Blob([content], { type: "text/plain" });
@@ -68,10 +91,64 @@ export default function FreeSwitch() {
             Instale o FreeSWITCH em um servidor Ubuntu 24.04 usando o script abaixo e cole/importe a config.
           </p>
         </div>
-        <button className="sbc-btn" onClick={load} data-testid="fs-refresh-btn">
-          <RefreshCw size={14} /> Regerar
-        </button>
+        <div className="flex gap-2 items-center">
+          {status?.esl_enabled && (
+            <button
+              className="sbc-btn sbc-btn-primary"
+              onClick={reloadFs}
+              data-testid="fs-reload-btn"
+              disabled={!status?.esl_connected}
+              title={status?.esl_connected ? "Enviar reloadxml + reloadacl via ESL" : "ESL desconectado"}
+            >
+              <Zap size={14} /> Recarregar FS
+            </button>
+          )}
+          <button className="sbc-btn" onClick={load} data-testid="fs-refresh-btn">
+            <RefreshCw size={14} /> Regerar
+          </button>
+        </div>
       </div>
+
+      {status && (
+        <div className="sbc-card p-3 flex items-center gap-4 text-xs font-mono flex-wrap" data-testid="fs-status-strip">
+          <div className="flex items-center gap-2">
+            <span className={`led ${status.esl_enabled && status.esl_connected ? "led-green" : status.esl_enabled ? "led-red" : "led-gray"}`} />
+            <span className="uppercase tracking-widest text-[color:var(--text-muted)]">
+              {status.esl_enabled ? (status.esl_connected ? "ESL conectado" : "ESL desconectado") : "Simulador"}
+            </span>
+          </div>
+          {status.uptime && (
+            <div>
+              <span className="text-[color:var(--text-muted)]">uptime:</span>{" "}
+              <span className="text-[color:var(--accent-green)]">{status.uptime}</span>
+            </div>
+          )}
+          {status.version && (
+            <div>
+              <span className="text-[color:var(--text-muted)]">versão:</span>{" "}
+              <span>{status.version}</span>
+            </div>
+          )}
+          <div>
+            <span className="text-[color:var(--text-muted)]">canais no FS:</span>{" "}
+            <span className="text-[color:var(--accent-amber)]">{status.channels_count}</span>
+          </div>
+          {status.last_error && (
+            <div className="text-[color:var(--accent-red)] flex items-center gap-1">
+              <AlertCircle size={12} /> {status.last_error}
+            </div>
+          )}
+        </div>
+      )}
+
+      {reloadMsg && (
+        <div
+          className={`text-xs font-mono px-3 py-2 rounded-sm border ${reloadMsg.ok ? "border-green-400 bg-green-50 text-green-800" : "border-red-400 bg-red-50 text-red-800"}`}
+          data-testid="fs-reload-msg"
+        >
+          {reloadMsg.ok ? "✓ " : "! "}{reloadMsg.text}
+        </div>
+      )}
 
       <div className="flex gap-2 border-b border-[color:var(--border-default)]">
         <button

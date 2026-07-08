@@ -9,11 +9,18 @@ function elapsed(startedAt) {
 
 export default function LiveChannels() {
   const [rows, setRows] = useState([]);
+  const [status, setStatus] = useState(null);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
     const load = async () => {
-      try { const { data } = await api.get("/live-channels"); setRows(data); }
+      try {
+        const [ch, st] = await Promise.all([
+          api.get("/live-channels"),
+          api.get("/freeswitch/status"),
+        ]);
+        setRows(ch.data); setStatus(st.data);
+      }
       catch (_err) { /* ignore */ }
     };
     load();
@@ -34,7 +41,17 @@ export default function LiveChannels() {
     <div className="space-y-5" data-testid="live-page">
       <div className="flex items-start justify-between">
         <div>
-          <div className="text-[10px] uppercase tracking-widest text-[color:var(--text-muted)]">Real-time channels</div>
+          <div className="text-[10px] uppercase tracking-widest text-[color:var(--text-muted)] flex items-center gap-2">
+            Real-time channels
+            {status && (
+              <span
+                className={`sbc-tag ${status.source === "esl" && status.esl_connected ? "tag-online" : "tag-offline"}`}
+                data-testid="live-source-tag"
+              >
+                {status.source === "esl" ? (status.esl_connected ? "ESL LIVE" : "ESL DOWN") : "SIMULATOR"}
+              </span>
+            )}
+          </div>
           <h1 className="text-2xl font-semibold tracking-tight">Chamadas Ativas</h1>
         </div>
         <div className="flex gap-3">
