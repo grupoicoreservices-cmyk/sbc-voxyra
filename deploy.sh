@@ -78,6 +78,21 @@ systemctl enable --now mongod
 # 4. FreeSWITCH 1.10 (SignalWire)
 # ---------------------------------------------------------------------
 if ! command -v freeswitch >/dev/null 2>&1; then
+  # Ubuntu 24.04 fix: SignalWire packages target Debian bookworm which needs
+  # libjpeg62-turbo, but noble ships only libjpeg-turbo8. Grab the .deb from
+  # Debian bookworm to satisfy the mod_spandsp dependency chain.
+  if ! dpkg -l 2>/dev/null | grep -q libjpeg62-turbo; then
+    echo "[*] Instalando libjpeg62-turbo (workaround Ubuntu 24.04)..."
+    cd /tmp
+    ARCH=$(dpkg --print-architecture)
+    wget -q "http://ftp.debian.org/debian/pool/main/libj/libjpeg-turbo/libjpeg62-turbo_2.1.5-2_${ARCH}.deb" \
+      -O libjpeg62-turbo.deb || \
+      wget -q "http://ftp.debian.org/debian/pool/main/libj/libjpeg-turbo/libjpeg62-turbo_2.1.5-2+deb12u1_${ARCH}.deb" \
+      -O libjpeg62-turbo.deb
+    apt-get -y install ./libjpeg62-turbo.deb
+    rm -f libjpeg62-turbo.deb
+  fi
+
   wget --http-user=signalwire --http-password="$FS_SIGNALWIRE_TOKEN" \
       -O /usr/share/keyrings/signalwire-freeswitch-repo.gpg \
       https://freeswitch.signalwire.com/repo/deb/debian-release/signalwire-freeswitch-repo.gpg
@@ -85,8 +100,7 @@ if ! command -v freeswitch >/dev/null 2>&1; then
 machine freeswitch.signalwire.com login signalwire password $FS_SIGNALWIRE_TOKEN
 EOF
   chmod 600 /etc/apt/auth.conf
-  UBU_CODENAME=$(lsb_release -sc)
-  # SignalWire ainda distribui via bookworm; funciona no Ubuntu 24
+  # SignalWire ainda distribui via bookworm; funciona no Ubuntu 24 com o libjpeg62 acima
   echo "deb [signed-by=/usr/share/keyrings/signalwire-freeswitch-repo.gpg] https://freeswitch.signalwire.com/repo/deb/debian-release/ bookworm main" \
       > /etc/apt/sources.list.d/freeswitch.list
   apt-get update
