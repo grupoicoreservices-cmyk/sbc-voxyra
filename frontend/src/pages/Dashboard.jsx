@@ -3,7 +3,7 @@ import { api } from "@/lib/api";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, BarChart, Bar } from "recharts";
 import { PhoneCall, TrendingUp, Clock, ShieldCheck, ShieldAlert, Radio, Server, PhoneMissed } from "lucide-react";
 
-function StatCard({ label, value, sub, icon: Icon, color = "text-slate-100", testid }) {
+function StatCard({ label, value, sub, icon: Icon, color = "text-[color:var(--text-primary)]", testid }) {
   return (
     <div className="sbc-card p-4 fade-in" data-testid={testid}>
       <div className="flex items-start justify-between">
@@ -59,7 +59,7 @@ export default function Dashboard() {
         <StatCard testid="stat-operadoras" label="Operadoras" value={`${m.operadoras.online}/${m.operadoras.total}`}
           icon={Radio} color="text-[color:var(--accent-green)]" sub="Trunks SIP online" />
         <StatCard testid="stat-ipbxs" label="IPBX externos" value={`${m.ipbxs.online}/${m.ipbxs.total}`}
-          icon={Server} sub="PBX destino conectados" />
+          icon={Server} color="text-[color:var(--accent-blue)]" sub="PBX destino conectados" />
         <StatCard testid="stat-acl" label="ACL"
           value={<span><span className="text-[color:var(--accent-green)]">{m.acl.allow}</span> / <span className="text-[color:var(--accent-red)]">{m.acl.deny}</span></span>}
           icon={ShieldAlert} sub="allow / deny rules" />
@@ -77,18 +77,18 @@ export default function Dashboard() {
             <AreaChart data={m.hourly} margin={{ top: 0, right: 8, bottom: 0, left: 0 }}>
               <defs>
                 <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#00FF88" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="#00FF88" stopOpacity={0} />
+                  <stop offset="0%" stopColor="#2563EB" stopOpacity={0.28} />
+                  <stop offset="100%" stopColor="#2563EB" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid stroke="#26272B" strokeDasharray="0" vertical={false} />
-              <XAxis dataKey="hour" stroke="#64748B" fontSize={10} tickLine={false} />
-              <YAxis stroke="#64748B" fontSize={10} tickLine={false} axisLine={false} width={28} />
+              <CartesianGrid stroke="#E4E7EB" strokeDasharray="0" vertical={false} />
+              <XAxis dataKey="hour" stroke="#94A3B8" fontSize={10} tickLine={false} />
+              <YAxis stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} width={28} />
               <Tooltip
-                contentStyle={{ background: "#121316", border: "1px solid #26272B", fontSize: 12, borderRadius: 3 }}
-                labelStyle={{ color: "#94A3B8" }}
+                contentStyle={{ background: "#FFFFFF", border: "1px solid #E4E7EB", fontSize: 12, borderRadius: 4, color: "#0F172A" }}
+                labelStyle={{ color: "#475569" }}
               />
-              <Area type="monotone" dataKey="chamadas" stroke="#00FF88" strokeWidth={2} fill="url(#g1)" />
+              <Area type="monotone" dataKey="chamadas" stroke="#2563EB" strokeWidth={2} fill="url(#g1)" />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -98,14 +98,14 @@ export default function Dashboard() {
           <div className="text-sm font-medium mb-3">Rotas mais discadas</div>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={m.top_destinations} margin={{ top: 0, right: 8, bottom: 0, left: 0 }}>
-              <CartesianGrid stroke="#26272B" strokeDasharray="0" vertical={false} />
-              <XAxis dataKey="prefixo" stroke="#64748B" fontSize={10} tickLine={false} />
-              <YAxis stroke="#64748B" fontSize={10} tickLine={false} axisLine={false} width={28} />
+              <CartesianGrid stroke="#E4E7EB" strokeDasharray="0" vertical={false} />
+              <XAxis dataKey="prefixo" stroke="#94A3B8" fontSize={10} tickLine={false} />
+              <YAxis stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} width={28} />
               <Tooltip
-                contentStyle={{ background: "#121316", border: "1px solid #26272B", fontSize: 12, borderRadius: 3 }}
-                labelStyle={{ color: "#94A3B8" }}
+                contentStyle={{ background: "#FFFFFF", border: "1px solid #E4E7EB", fontSize: 12, borderRadius: 4, color: "#0F172A" }}
+                labelStyle={{ color: "#475569" }}
               />
-              <Bar dataKey="total" fill="#3B82F6" radius={[2, 2, 0, 0]} />
+              <Bar dataKey="total" fill="#059669" radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>

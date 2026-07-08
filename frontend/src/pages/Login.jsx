@@ -22,7 +22,7 @@ export default function Login() {
       <div className="absolute inset-0" style={{
         backgroundImage: `url(${BG})`, backgroundSize: "cover", backgroundPosition: "center",
       }} />
-      <div className="absolute inset-0" style={{ background: "linear-gradient(90deg, rgba(10,10,11,0.95) 0%, rgba(10,10,11,0.75) 45%, rgba(10,10,11,0.3) 100%)" }} />
+      <div className="absolute inset-0" style={{ background: "linear-gradient(90deg, rgba(246,247,249,0.98) 0%, rgba(246,247,249,0.92) 40%, rgba(246,247,249,0.55) 100%)" }} />
 
       <div className="relative z-10 w-full max-w-md ml-16 p-10 fade-in">
         <div className="flex items-center gap-3 mb-10">

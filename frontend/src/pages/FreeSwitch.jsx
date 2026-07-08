@@ -14,13 +14,13 @@ function highlight(xml) {
   out = out.replace(/(&lt;!--[\s\S]*?--&gt;)/g, "@@CMT_START@@$1@@CMT_END@@");
   // Tag opening/closing markers
   out = out.replace(/(&lt;\/?[a-zA-Z_][\w:.-]*)/g, "@@TAG_START@@$1@@TAG_END@@");
-  // Now substitute placeholders with span
+  // Now substitute placeholders with span (light theme colors)
   out = out
-    .replace(/@@TAG_START@@/g, '<span style="color:#00FF88">')
+    .replace(/@@TAG_START@@/g, '<span style="color:#059669">')
     .replace(/@@TAG_END@@/g, "</span>")
-    .replace(/@@ATTR_START@@/g, '<span style="color:#F59E0B">')
+    .replace(/@@ATTR_START@@/g, '<span style="color:#B45309">')
     .replace(/@@ATTR_END@@/g, "</span>")
-    .replace(/@@CMT_START@@/g, '<span style="color:#64748B">')
+    .replace(/@@CMT_START@@/g, '<span style="color:#94A3B8">')
     .replace(/@@CMT_END@@/g, "</span>");
   return out;
 }
