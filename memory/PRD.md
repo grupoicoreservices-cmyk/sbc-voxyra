@@ -1,62 +1,73 @@
-# SBC Manager - Product Requirements Document
+# SBC Voxyra / SBC Manager - Product Requirements Document
 
 ## Original Problem Statement
 > "Quero criar um servidor Session Board Controle voip aonde eu utilize ele para gerenciar as minhas conexões com as operadoras e encaminhar as ligações para meu IPBX externo com uma interface bem completa com segurança e controle de IPs que podem enviar e receber ligações."
 
 ## Product Overview
-**SBC Manager** — Painel de gerenciamento web para Session Border Controller VoIP, em Português (Brasil). Gera automaticamente configurações FreeSWITCH que rodam em servidor Ubuntu 24.04 externo.
+**SBC Voxyra** — Painel de gerenciamento web para Session Border Controller VoIP em Português (Brasil), com backend Python/FastAPI + MongoDB, frontend React em tema claro, e **integração real com FreeSWITCH via ESL + webhook CDR**.
 
 ## Architecture
-- **Backend:** FastAPI (Python) + MongoDB (motor async) + JWT auth (httpOnly cookies)
-- **Frontend:** React 19 + React Router + Recharts + Tailwind + IBM Plex Sans / JetBrains Mono
-- **SIP engine:** FreeSWITCH 1.10 externo (config XML gerada pelo painel)
-- **Realtime:** simulador in-memory (asyncio task) para live channels — substituir por webhook do FreeSWITCH em produção
+- **Backend:** FastAPI + Motor async MongoDB + JWT httpOnly cookies + ESL client asyncio nativo
+- **Frontend:** React 19 + React Router 7 + Recharts + Tailwind + IBM Plex Sans / JetBrains Mono
+- **SIP engine:** FreeSWITCH 1.10 (SignalWire) rodando no mesmo servidor
+- **Realtime:** ESL polling (2s) → sincroniza `db.live_channels` com FreeSWITCH real
+- **CDR:** mod_json_cdr posta em `POST /api/cdr/webhook` (localhost-only via nginx)
+- **Deploy:** script `deploy.sh` one-shot para Ubuntu 24.04
 
 ## User Personas
-- **Administrador (admin)** — cria usuários, cadastra operadoras, IPBXs, rotas, ACL, gera FreeSWITCH config.
-- **Operador (operator)** — visualiza dashboards, encerra chamadas ativas, exporta CDR.
-- **Viewer (viewer)** — somente leitura.
+- **Administrador (admin)** — CRUD tudo, gera XML, recarrega FreeSWITCH via ESL
+- **Operador (operator)** — visualiza, encerra chamadas ao vivo (uuid_kill via ESL)
+- **Viewer (viewer)** — somente leitura
 
-## Core Features (Implemented — 2026-01-07)
-- [x] Login JWT (email/senha) com httpOnly cookies, admin seed em `.env`
-- [x] Sidebar colapsável + topbar com status do servidor, uptime, canais ativos ao vivo
-- [x] **Dashboard** — Canais em uso, Chamadas hoje, ASR, ACD, gráficos (chamadas/hora 24h + top destinos)
-- [x] **Operadoras (SIP Trunks)** — CRUD completo: nome, host, porta, protocolo (udp/tcp/tls), usuário, senha, codecs, canais máx, prefixo, status LED
-- [x] **IPBX externos** — CRUD (destino para bridge)
-- [x] **Rotas / LCR** — regex de destino, operadora + IPBX destino, prioridade (menor = maior), custo/min
-- [x] **ACL** — IP/CIDR, allow/deny, direção (inbound/outbound/both)
-- [x] **CDR** — filtros (origem, destino, disposição), export CSV, colunas: call_id, IPs, duração, billsec, codec, hangup cause
-- [x] **Chamadas Ativas** — live table com LED pulsante para Ringing, botão Hangup (encerra e move para CDR)
-- [x] **Anti-Fraude** — regras (max_channels_per_ip, max_calls_per_minute, destination_blocklist, cost_limit) com ação block/alert
-- [x] **Configurações FreeSWITCH** — gerador XML completo (acl.conf + gateways + dialplan) + script de instalação Ubuntu 24.04 (SignalWire repo, UFW, systemd), tabs XML/Script com syntax highlighting e download
-- [x] **Usuários** — admin cria/exclui usuários (admin/operator/viewer)
-- [x] Simulador in-memory de chamadas (asyncio) — gera ringing → active → CDR continuamente
-- [x] Seed automático (3 operadoras, 2 IPBXs, 4 ACL, 3 rotas, 3 anti-fraude, 80 CDRs)
+## Iteration 1 — MVP (concluído 2026-01-07)
+- [x] Login JWT com httpOnly cookies + admin seed
+- [x] Sidebar + topbar + uptime + canais ativos ao vivo
+- [x] Dashboard com métricas + gráficos Recharts (24h + top destinos)
+- [x] CRUD: Operadoras, IPBX externos, Rotas/LCR, ACL, Anti-Fraude, Usuários
+- [x] CDR com filtros e export CSV
+- [x] Chamadas Ativas com hangup e LED pulsante
+- [x] FreeSWITCH XML config generator + script Ubuntu 24 install
+- [x] Simulador in-memory de chamadas ao vivo
+- [x] Seed automático (3 op, 2 ipbx, 4 acl, 3 rotas, 3 antifraud, 80 CDRs)
+
+## Iteration 2 — Tema claro + Integração real FreeSWITCH (concluído 2026-01-08)
+- [x] Conversão completa para tema claro (light NOC dashboard)
+- [x] ESL client asyncio nativo (`backend/esl.py`) — auth, api, bgapi
+- [x] Background task `_esl_sync_loop` — polling de `show channels as json` a cada 2s, upsert em `db.live_channels`
+- [x] Endpoint `GET /api/freeswitch/status` — esl_connected, uptime, version, channels_count
+- [x] Endpoint `POST /api/freeswitch/reload` — envia `reloadxml` + `reloadacl` via ESL
+- [x] Endpoint `POST /api/cdr/webhook` — recebe JSON de mod_json_cdr, extrai campos e insere em `db.cdr`, com mapping de hangup_cause → disposition (localhost-only)
+- [x] DELETE `/api/live-channels/{cid}` usa `uuid_kill` via ESL quando enabled
+- [x] Dashboard card "FreeSWITCH Engine" mostrando modo ESL/Simulator, uptime, canais no FS, último sync
+- [x] Página FreeSWITCH: status strip + botão "Recarregar FS" (só quando ESL enabled)
+- [x] Chamadas Ativas: badge SIMULATOR / ESL LIVE / ESL DOWN
+- [x] `deploy.sh` one-shot atualizado: instala FreeSWITCH 1.10 (SignalWire), configura event_socket + json_cdr + acl + modules automaticamente, gera senha ESL aleatória, nginx bloqueia webhook para requests externos
+- [x] 32/32 testes backend passando; frontend 100%
 
 ## Testing
-- Backend: 22/22 pytest cases passed (auth, CRUD, dashboard, FreeSWITCH generator, CDR export, live channels lifecycle)
-- Frontend: todas as 10 seções navegam, CRUDs funcionam, download XML/CSV funcionam
-- Test credentials: `admin@sbcmanager.com` / `Admin@2026`
+- Iteration 1: 22/22 backend, 100% frontend
+- Iteration 2: 32/32 backend (10 novos), 100% frontend
+- Credenciais: `admin@sbcmanager.com` / `Admin@2026`
 
-## Prioritized Backlog (P0/P1/P2)
-### P1 — Integração real com FreeSWITCH
-- [ ] Webhook `mod_json_cdr` → `POST /api/cdr/webhook` para receber CDRs reais
-- [ ] `mod_xml_curl` para servir dialplan/gateway dinamicamente
-- [ ] Endpoint `/api/freeswitch/status` que consulta ESL (Event Socket) para saber uptime real, canais reais, uptime, load
+## Iteration 3 — Backlog / Próximas features
+### P1
+- [ ] mod_xml_curl: painel serve dialplan dinâmico (o FS busca a cada chamada em vez de baixar XML)
+- [ ] Brute-force lockout no login (5 tentativas → 15min)
+- [ ] Auditoria: log de todas ações admin
+- [ ] Notificações Telegram/Discord (ASR baixo, IP bloqueado por anti-fraude)
 
-### P1 — Segurança
-- [ ] Brute-force lockout no login (5 falhas → 15 min)
-- [ ] Auditoria: log de todas ações admin (create/delete)
-- [ ] 2FA para admin
-
-### P2 — Features avançadas
-- [ ] Blacklist automática por IPs que quebram anti-fraude
-- [ ] Gráfico de custo por operadora
-- [ ] Notificações via Telegram/Discord quando ASR cai abaixo de X%
+### P2
+- [ ] SSL/TLS automático via Let's Encrypt no deploy.sh (certbot)
 - [ ] Multi-tenant (empresas separadas)
-- [ ] Página de PCAP capture (integração sngrep)
+- [ ] Gráfico de custo por operadora
+- [ ] 2FA para admin
+- [ ] Integração PCAP capture (sngrep)
 
-## Next Actions
-1. Deploy do FreeSWITCH em VPS Ubuntu 24.04 usando script gerado
-2. Configurar webhook CDR e endpoint /api/cdr/webhook para receber CDRs reais
-3. Implementar ESL (Event Socket) para live channels reais
+## Deploy
+Comando único no Ubuntu 24.04 (o usuário precisa criar conta grátis no SignalWire para obter token):
+```bash
+curl -fsSL https://raw.githubusercontent.com/grupoicoreservices-cmyk/sbc-voxyra/main/deploy.sh \
+  | sudo FS_SIGNALWIRE_TOKEN=xxx DOMAIN=sbc.example.com bash
+```
+
+Isso instala: Python 3.12, Node 20, MongoDB 7, FreeSWITCH 1.10, supervisor, nginx (com proxy reverso + webhook localhost-only), UFW (SIP 5060/udp, RTP 16384-32768/udp) e configura tudo automaticamente.
